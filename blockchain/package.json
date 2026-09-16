@@ -1,0 +1,35 @@
+{
+  "name": "hospitalchain-blockchain",
+  "version": "1.0.0",
+  "description": "HospitalChain Blockchain - Smart Contracts",
+  "main": "scripts/deploy.ts",
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "tsx scripts/deploy.ts",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "clean": "hardhat clean",
+    "console": "hardhat console"
+  },
+  "dependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@openzeppelin/contracts": "^5.0.1",
+    "ethers": "^6.11.1",
+    "hardhat": "^2.19.4"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.2",
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.8",
+    "@nomicfoundation/hardhat-verify": "^2.0.0",
+    "@typechain/hardhat": "^9.0.0",
+    "@types/chai": "^4.3.11",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.24",
+    "chai": "^4.3.10",
+    "mocha": "^10.2.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.7.1",
+    "typechain": "^8.3.2"
+  }
+}
