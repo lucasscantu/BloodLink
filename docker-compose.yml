@@ -2,24 +2,17 @@
 # Academic prototype for blood bag traceability using blockchain
 #
 # ============================================
-# IMPORTANT: Docker may not work in all environments
-# ============================================
+# Quick Start with Docker:
+#   docker compose down
+#   docker compose build --no-cache
+#   docker compose up -d
 #
 # If Docker fails, use the alternative scripts:
 #   ./scripts/dev.sh      - Auto-detects Docker or runs locally
 #   ./scripts/init.sh     - Full initialization
 #   ./scripts/stop.sh     - Stop all services
 #   ./scripts/seed.sh     - Seed database with test data
-#
 # ============================================
-# Quick Start with Docker (if available):
-#   docker compose down
-#   docker compose build --no-cache
-#   docker compose up -d
-#
-# ============================================
-
-version: '3.8'
 
 services:
   # PostgreSQL Database
@@ -68,7 +61,7 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
-    command: sh -c "npm install 2>&1 | grep -v 'audit\|fund\|deprecated' && npx prisma generate && npm run dev"
+    command: sh -c "npm install 2>&1 | grep -v 'audit\|fund\|deprecated' && npx prisma generate && npx prisma migrate dev --name init 2>/dev/null || true && npm run dev"
     restart: unless-stopped
     networks:
       - hospitalchain-network
