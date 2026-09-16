@@ -1,0 +1,23 @@
+# Use Node.js LTS image for development
+FROM node:20
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies
+RUN npm ci
+
+# Copy source files
+COPY . .
+
+# Compile contracts
+RUN npx hardhat compile
+
+# Expose port
+EXPOSE 8545
+
+# Start Hardhat node
+CMD ["npx", "hardhat", "node", "--host", "0.0.0.0"]

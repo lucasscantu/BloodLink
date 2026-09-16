@@ -1,3 +1,19 @@
+# Docker Compose Configuration for HospitalChain
+# Academic prototype for blood bag traceability using blockchain
+#
+# Usage:
+#   Development (with hot-reload):
+#     docker-compose -f docker-compose.yml up -d
+#
+#   Production:
+#     docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Services:
+#   - postgres: PostgreSQL database
+#   - backend: Node.js/Express API server
+#   - blockchain: Hardhat Ethereum node
+#   - frontend: React/Vite application
+
 services:
   # PostgreSQL Database
   postgres:
@@ -13,9 +29,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
     networks:
       - hospitalchain-network
 
@@ -23,12 +41,12 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: hospitalchain-backend
     environment:
       NODE_ENV: development
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hospitalchain?schema=public
-      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      JWT_SECRET: dev-secret-key-change-in-production
       BLOCKCHAIN_URL: http://blockchain:8545
       BLOCKCHAIN_CHAIN_ID: 1337
       FRONTEND_URL: http://localhost:3000
@@ -43,7 +61,8 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
-    command: npm run dev
+    command: sh -c "npm install && npx prisma generate && npm run dev"
+    restart: unless-stopped
     networks:
       - hospitalchain-network
 
@@ -51,14 +70,15 @@ services:
   blockchain:
     build:
       context: ./blockchain
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: hospitalchain-blockchain
     ports:
       - "8545:8545"
     volumes:
       - ./blockchain:/app
       - /app/node_modules
-    command: npx hardhat node
+    command: sh -c "npm install && npx hardhat node --host 0.0.0.0"
+    restart: unless-stopped
     networks:
       - hospitalchain-network
 
@@ -66,11 +86,11 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: hospitalchain-frontend
     environment:
-      VITE_API_URL: http://backend:4000
-      VITE_BLOCKCHAIN_URL: http://blockchain:8545
+      VITE_API_URL: http://localhost:4000
+      VITE_BLOCKCHAIN_URL: http://localhost:8545
     ports:
       - "3000:3000"
     depends_on:
@@ -79,7 +99,8 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    command: npm run dev
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
     networks:
       - hospitalchain-network
 
