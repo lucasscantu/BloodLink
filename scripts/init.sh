@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # HospitalChain Initialization Script
-# This script sets up and starts all services without Docker
+# This script performs a complete initialization of the HospitalChain application
 # Usage: chmod +x scripts/init.sh && ./scripts/init.sh
 
 set -e
 
 echo "=========================================="
-echo "  HospitalChain - Initialization Script"
+echo "  HospitalChain - Complete Initialization"
 echo "=========================================="
 echo ""
 
@@ -15,260 +15,184 @@ echo ""
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Check if running as root
-if [ "$(id -u)" = "0" ]; then
-    echo -e "${RED}ERROR: Do not run as root!${NC}"
-    echo "This script should be run as a regular user."
-    exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Check prerequisites
+# Function to check if Docker is available
+check_docker() {
+    if command_exists docker && docker ps >/dev/null 2>&1; then
+        echo "Docker is available"
+        return 0
+    else
+        echo "Docker is not available"
+        return 1
+    fi
+}
+
 echo "Checking prerequisites..."
 
+# Check Node.js
 if ! command_exists node; then
-    echo -e "${RED}ERROR: Node.js is not installed${NC}"
-    echo "Please install Node.js 20+ from https://nodejs.org/"
+    echo -e "${RED}ERROR: Node.js is required but not found${NC}"
+    echo "Please install Node.js from https://nodejs.org/"
     exit 1
 fi
 
+# Check npm
 if ! command_exists npm; then
-    echo -e "${RED}ERROR: npm is not installed${NC}"
-    echo "npm should be installed with Node.js"
+    echo -e "${RED}ERROR: npm is required but not found${NC}"
     exit 1
 fi
 
+# Check git
 if ! command_exists git; then
-    echo -e "${YELLOW}WARNING: git is not installed${NC}"
-    echo "git is recommended for version control"
+    echo -e "${RED}ERROR: git is required but not found${NC}"
+    exit 1
 fi
 
-if ! command_exists psql; then
-    echo -e "${YELLOW}WARNING: psql (PostgreSQL client) is not installed${NC}"
-    echo "PostgreSQL will be started via Docker or needs to be installed locally"
-fi
-
-echo -e "${GREEN}✓ All prerequisites checked${NC}"
-echo ""
-
-# Step 1: Install dependencies
-echo "=========================================="
-echo "Step 1: Installing dependencies..."
-echo "=========================================="
-echo ""
-
-# Backend
-echo "Installing backend dependencies..."
-cd backend
-if [ -f "package-lock.json" ]; then
-    npm ci 2>&1 | grep -v "audit\|fund\|deprecated" || true
+# Check Docker
+if check_docker; then
+    echo -e "${GREEN}Docker: Available${NC}"
+    USE_DOCKER=true
 else
-    npm install 2>&1 | grep -v "audit\|fund\|deprecated" || true
+    echo -e "${YELLOW}Docker: Not available - will use local development${NC}"
+    USE_DOCKER=false
 fi
-cd ..
 
-# Frontend
-echo "Installing frontend dependencies..."
-cd frontend
-if [ -f "package-lock.json" ]; then
-    npm ci 2>&1 | grep -v "audit\|fund\|deprecated" || true
-else
-    npm install 2>&1 | grep -v "audit\|fund\|deprecated" || true
-fi
-cd ..
-
-# Blockchain
-echo "Installing blockchain dependencies..."
-cd blockchain
-if [ -f "package-lock.json" ]; then
-    npm ci 2>&1 | grep -v "audit\|fund\|deprecated" || true
-else
-    npm install 2>&1 | grep -v "audit\|fund\|deprecated" || true
-fi
-cd ..
-
-echo -e "${GREEN}✓ Dependencies installed${NC}"
 echo ""
 
-# Step 2: Generate Prisma client
-echo "=========================================="
-echo "Step 2: Generating Prisma client..."
-echo "=========================================="
-echo ""
-
-cd backend
-npx prisma generate
-cd ..
-
-echo -e "${GREEN}✓ Prisma client generated${NC}"
-echo ""
-
-# Step 3: Compile blockchain contracts
-echo "=========================================="
-echo "Step 3: Compiling smart contracts..."
-echo "=========================================="
-echo ""
-
-cd blockchain
-npx hardhat compile
-cd ..
-
-echo -e "${GREEN}✓ Smart contracts compiled${NC}"
-echo ""
-
-# Step 4: Start PostgreSQL
-echo "=========================================="
-echo "Step 4: Starting PostgreSQL..."
-echo "=========================================="
-echo ""
-
-# Check if PostgreSQL is running
-if command_exists pg_isready; then
-    if pg_isready -h localhost -U postgres >/dev/null 2>&1; then
-        echo "PostgreSQL is already running"
-    else
-        # Try to start PostgreSQL via Docker
-        if command_exists docker; then
-            echo "Starting PostgreSQL with Docker..."
-            docker run -d --name hospitalchain-postgres \
-                -e POSTGRES_USER=postgres \
-                -e POSTGRES_PASSWORD=postgres \
-                -e POSTGRES_DB=hospitalchain \
-                -p 5432:5432 \
-                -v hospitalchain-postgres-data:/var/lib/postgresql/data \
-                postgres:15-alpine
-            
-            # Wait for PostgreSQL to start
-            echo "Waiting for PostgreSQL to start..."
-            for i in {1..30}; do
-                if pg_isready -h localhost -U postgres >/dev/null 2>&1; then
-                    echo "PostgreSQL is ready!"
-                    break
-                fi
-                sleep 2
-                echo -n "."
-            done
-        else
-            echo -e "${YELLOW}WARNING: Docker is not available${NC}"
-            echo "Please ensure PostgreSQL is running locally:"
-            echo "  - User: postgres"
-            echo "  - Password: postgres"
-            echo "  - Database: hospitalchain"
-            echo "  - Port: 5432"
+# Initialize database
+if [ "$USE_DOCKER" = true ]; then
+    echo "Starting services with Docker..."
+    cd "$PROJECT_ROOT"
+    
+    # Clean up any existing containers
+    echo "Cleaning up existing containers..."
+    docker compose down 2>/dev/null || true
+    
+    # Build and start containers
+    echo "Building and starting containers..."
+    docker compose build --no-cache 2>&1 | grep -v "audit\|fund\|deprecated" || true
+    docker compose up -d 2>&1 | grep -v "audit\|fund\|deprecated" || true
+    
+    # Wait for PostgreSQL to be ready
+    echo "Waiting for PostgreSQL to start..."
+    for i in {1..30}; do
+        if docker exec hospitalchain-postgres pg_isready -U postgres >/dev/null 2>&1; then
+            echo -e "${GREEN}PostgreSQL is ready${NC}"
+            break
         fi
-    fi
+        sleep 2
+        echo -n "."
+    done
+    
+    # Wait for backend to be ready
+    echo "Waiting for backend to start..."
+    for i in {1..30}; do
+        if curl -s http://localhost:4000/health >/dev/null 2>&1; then
+            echo -e "${GREEN}Backend is ready${NC}"
+            break
+        fi
+        sleep 2
+        echo -n "."
+    done
+    
+    # Wait for blockchain to be ready
+    echo "Waiting for blockchain to start..."
+    for i in {1..30}; do
+        if curl -s -X POST http://localhost:8545 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' >/dev/null 2>&1; then
+            echo -e "${GREEN}Blockchain is ready${NC}"
+            break
+        fi
+        sleep 2
+        echo -n "."
+    done
+    
+    # Wait for frontend to be ready
+    echo "Waiting for frontend to start..."
+    for i in {1..30}; do
+        if curl -s http://localhost:3000 >/dev/null 2>&1; then
+            echo -e "${GREEN}Frontend is ready${NC}"
+            break
+        fi
+        sleep 2
+        echo -n "."
+    done
 else
-    echo -e "${YELLOW}WARNING: pg_isready not found${NC}"
-    echo "PostgreSQL may not be properly configured"
+    echo "Starting services locally..."
+    
+    # Start PostgreSQL locally if possible
+    if command_exists pg_ctl; then
+        echo "Starting PostgreSQL..."
+        pg_ctl start -D /usr/local/var/postgres 2>/dev/null || true
+    fi
+    
+    # Install dependencies and start backend
+    echo "Starting backend..."
+    cd "$PROJECT_ROOT/backend"
+    npm install 2>&1 | grep -v "audit\|fund\|deprecated" || true
+    npx prisma generate
+    npx prisma migrate dev --name init 2>/dev/null || true
+    npm run dev &
+    BACKEND_PID=$!
+    
+    # Start blockchain
+    echo "Starting blockchain..."
+    cd "$PROJECT_ROOT/blockchain"
+    npm install 2>&1 | grep -v "audit\|fund\|deprecated" || true
+    npx hardhat node --host 0.0.0.0 &
+    BLOCKCHAIN_PID=$!
+    
+    # Start frontend
+    echo "Starting frontend..."
+    cd "$PROJECT_ROOT/frontend"
+    npm install 2>&1 | grep -v "audit\|fund\|deprecated" || true
+    npm run dev &
+    FRONTEND_PID=$!
+    
+    # Wait for services
+    echo "Waiting for services to start..."
+    sleep 10
 fi
 
 echo ""
-
-# Step 5: Run database migrations
 echo "=========================================="
-echo "Step 5: Running database migrations..."
+echo "  Initialization Summary"
 echo "=========================================="
 echo ""
 
-cd backend
-npx prisma migrate dev --name init 2>&1 || npx prisma db push
-cd ..
+if [ "$USE_DOCKER" = true ]; then
+    echo "Docker containers:"
+    docker ps --filter "name=hospitalchain-*" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || true
+else
+    echo "Local processes:"
+    echo "  Backend: PID $BACKEND_PID"
+    echo "  Blockchain: PID $BLOCKCHAIN_PID"
+    echo "  Frontend: PID $FRONTEND_PID"
+fi
 
-echo -e "${GREEN}✓ Database migrations applied${NC}"
 echo ""
-
-# Step 6: Deploy smart contracts
-echo "=========================================="
-echo "Step 6: Deploying smart contracts..."
-echo "=========================================="
+echo "Services should be available at:"
+echo "  Backend API: http://localhost:4000"
+echo "  Frontend: http://localhost:3000"
+echo "  Blockchain: http://localhost:8545"
 echo ""
-
-cd blockchain
-# Start Hardhat node in background
-npx hardhat node --host 0.0.0.0 &
-HARDHAT_PID=$!
-
-# Wait for Hardhat to start
-echo "Waiting for Hardhat node to start..."
-sleep 5
-
-# Deploy contracts
-npx hardhat run scripts/deploy.ts --network localhost
-
-# Kill Hardhat node (we'll restart it properly later)
-kill $HARDHAT_PID 2>/dev/null || true
-
-cd ..
-
-echo -e "${GREEN}✓ Smart contracts deployed${NC}"
-echo ""
-
-# Step 7: Start services
 echo "=========================================="
-echo "Step 7: Starting services..."
+echo "  HospitalChain is ready!"
 echo "=========================================="
 echo ""
 
-# Create logs directory
-mkdir -p logs
-
-# Start Hardhat node in background
-echo "Starting Hardhat node..."
-cd blockchain
-nohup npx hardhat node --host 0.0.0.0 > ../logs/blockchain.log 2>&1 &
-BLOCKCHAIN_PID=$!
-echo "Hardhat node started (PID: $BLOCKCHAIN_PID)"
-cd ..
-
-# Wait a bit
-sleep 3
-
-# Start backend in background
-echo "Starting backend server..."
-cd backend
-nohup npm run dev > ../logs/backend.log 2>&1 &
-BACKEND_PID=$!
-echo "Backend server started (PID: $BACKEND_PID)"
-cd ..
-
-# Wait a bit
-sleep 3
-
-# Start frontend in background
-echo "Starting frontend server..."
-cd frontend
-nohup npm run dev > ../logs/frontend.log 2>&1 &
-FRONTEND_PID=$!
-echo "Frontend server started (PID: $FRONTEND_PID)"
-cd ..
-
-# Wait a bit
-sleep 2
-
-echo ""
-echo -e "${GREEN}=========================================="${NC}
-echo -e "${GREEN}  HospitalChain is now running!"${NC}
-echo -e "${GREEN}=========================================="${NC}
-echo ""
-echo "Services:"
-echo "  🔗 Blockchain: http://localhost:8545"
-echo "  🚀 Backend API: http://localhost:4000"
-echo "  🌐 Frontend: http://localhost:3000"
-echo ""
-echo "Logs:"
-echo "  📝 Blockchain: logs/blockchain.log"
-echo "  📝 Backend: logs/backend.log"
-echo "  📝 Frontend: logs/frontend.log"
-echo ""
-echo "To stop all services:"
-echo "  ./scripts/stop.sh"
-echo ""
-echo "Or manually:"
-echo "  kill $BLOCKCHAIN_PID $BACKEND_PID $FRONTEND_PID"
-echo ""
+# Run verification
+cd "$PROJECT_ROOT"
+if [ -f "$SCRIPT_DIR/verify.sh" ]; then
+    echo "Running connection verification..."
+    bash "$SCRIPT_DIR/verify.sh"
+fi
