@@ -1,23 +1,14 @@
-# Docker Compose Configuration for HospitalChain
-# Academic prototype for blood bag traceability using blockchain
+# Docker Compose Production Configuration for HospitalChain
+# Use this file for production deployments
 #
-# ============================================
-# IMPORTANT: Docker may not work in all environments
-# ============================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
-# If Docker fails, use the alternative scripts:
-#   ./scripts/dev.sh      - Auto-detects Docker or runs locally
-#   ./scripts/init.sh     - Full initialization
-#   ./scripts/stop.sh     - Stop all services
-#   ./scripts/seed.sh     - Seed database with test data
-#
-# ============================================
-# Quick Start with Docker (if available):
-#   docker compose down
-#   docker compose build --no-cache
-#   docker compose up -d
-#
-# ============================================
+# This configuration:
+#   - Uses production-optimized images
+#   - Disables hot-reload
+#   - Uses proper restart policies
+#   - Configures proper resource limits
 
 version: '3.8'
 
@@ -41,6 +32,10 @@ services:
       retries: 10
       start_period: 30s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     networks:
       - hospitalchain-network
 
@@ -48,12 +43,12 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: hospitalchain-backend
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hospitalchain?schema=public
-      JWT_SECRET: dev-secret-key-change-in-production
+      JWT_SECRET: ${JWT_SECRET:-your-production-secret-key}
       BLOCKCHAIN_URL: http://blockchain:8545
       BLOCKCHAIN_CHAIN_ID: 1337
       FRONTEND_URL: http://localhost:3000
@@ -65,11 +60,12 @@ services:
         condition: service_healthy
       blockchain:
         condition: service_started
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
-    command: sh -c "npm install 2>&1 | grep -v 'audit\|fund\|deprecated' && npx prisma generate && npm run dev"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1'
     networks:
       - hospitalchain-network
 
@@ -77,15 +73,16 @@ services:
   blockchain:
     build:
       context: ./blockchain
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: hospitalchain-blockchain
     ports:
       - "8545:8545"
-    volumes:
-      - ./blockchain:/app
-      - /app/node_modules
-    command: sh -c "npm install 2>&1 | grep -v 'audit\|fund\|deprecated' && npx hardhat node --host 0.0.0.0"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1'
     networks:
       - hospitalchain-network
 
@@ -93,21 +90,22 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: hospitalchain-frontend
     environment:
-      VITE_API_URL: http://localhost:4000
-      VITE_BLOCKCHAIN_URL: http://localhost:8545
+      VITE_API_URL: http://backend:4000
+      VITE_BLOCKCHAIN_URL: http://blockchain:8545
     ports:
       - "3000:3000"
     depends_on:
       backend:
         condition: service_started
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: sh -c "npm install 2>&1 | grep -v 'audit\|fund\|deprecated' && npm run dev"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1'
     networks:
       - hospitalchain-network
 
