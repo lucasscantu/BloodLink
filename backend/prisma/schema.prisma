@@ -1,0 +1,318 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// HospitalChain Database Schema
+// Academic prototype for blood bag traceability
+// ============================================
+
+// User model with role-based access control
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  password        String
+  name            String
+  role            UserRole  @default(HEMOCENTRO)
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  bloodBags      BloodBag[]
+  demands        Demand[]
+  requestedTransfers Transfer[] @relation("RequestedBy")
+  approvedTransfers  Transfer[] @relation("ApprovedBy")
+  auditLogs      AuditLog[]
+
+  @@index([email])
+  @@index([institutionId])
+}
+
+// User roles
+enum UserRole {
+  ADMIN
+  HEMOCENTRO
+  HOSPITAL
+  AUDITOR
+}
+
+// Institution model (Hemocentros and Hospitals)
+model Institution {
+  id               String   @id @default(uuid())
+  name             String   @unique
+  type             InstitutionType
+  address          String?
+  city             String?
+  state            String?
+  zipCode          String?
+  phone            String?
+  email            String?
+  latitude         Float?
+  longitude        Float?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  users             User[]
+  bloodBags         BloodBag[]
+  demands           Demand[]
+  transfersFrom     Transfer[] @relation("FromInstitution")
+  transfersTo       Transfer[] @relation("ToInstitution")
+  temperatureReadings TemperatureReading[]
+
+  @@index([name])
+  @@index([type])
+}
+
+// Institution types
+enum InstitutionType {
+  HEMOCENTRO
+  HOSPITAL
+}
+
+// Blood Bag model
+model BloodBag {
+  id               String    @id @default(uuid())
+  code             String    @unique
+  bloodType        BloodType
+  rhFactor         RhFactor
+  volume           Float?    // in ml
+  donationDate     DateTime
+  expiryDate       DateTime
+  status           BloodBagStatus @default(COLETADA)
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id])
+  currentLocation  String?   // e.g., "Camara frigorifica 03"
+  currentUserId    String?
+  currentUser      User?     @relation(fields: [currentUserId], references: [id])
+  qrCode           String?   @unique
+  donorId          String?   // Reference to donor (not stored in blockchain)
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relations
+  events           Event[]
+  transfers        Transfer[]
+  temperatureReadings TemperatureReading[]
+
+  @@index([code])
+  @@index([bloodType, rhFactor])
+  @@index([status])
+  @@index([institutionId])
+  @@index([expiryDate])
+}
+
+// Blood types
+enum BloodType {
+  A
+  B
+  AB
+  O
+}
+
+// Rh factors
+enum RhFactor {
+  POSITIVE
+  NEGATIVE
+}
+
+// Blood bag status
+enum BloodBagStatus {
+  COLETADA
+  EM_TESTE
+  APROVADA
+  REPROVADA
+  ARMAZENADA
+  EM_TRANSPORTE
+  RECEBIDA
+  DISPONIVEL
+  RESERVADA
+  UTILIZADA
+  DESCARTADA
+  EXPIRADA
+}
+
+// Event model - tracks all changes to blood bags
+model Event {
+  id                String    @id @default(uuid())
+  bagId             String
+  bag               BloodBag @relation(fields: [bagId], references: [id])
+  eventType         EventType
+  description       String?
+  institutionId     String
+  userId            String?
+  timestamp         DateTime  @default(now())
+  hash              String?   // SHA-256 hash for blockchain verification
+  blockchainTxId    String?   // Blockchain transaction ID
+  metadata          Json?     // Additional data as JSON
+  verified          Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+
+  @@index([bagId])
+  @@index([eventType])
+  @@index([timestamp])
+  @@index([blockchainTxId])
+}
+
+// Event types
+enum EventType {
+  COLETA
+  TESTE_INICIADO
+  TESTE_APROVADO
+  TESTE_REPROVADO
+  ARMAZENAMENTO
+  TRANSFERENCIA_SOLICITADA
+  TRANSFERENCIA_APROVADA
+  TRANSFERENCIA_REJEITADA
+  TRANSFERENCIA_INICIADA
+  TRANSFERENCIA_EM_TRANSPORTE
+  TRANSFERENCIA_RECEBIDA
+  RESERVA
+  UTILIZACAO
+  DESCARTE
+  EXPIRACAO
+  TEMPERATURA_ALERTA
+}
+
+// Demand model - blood requests from hospitals
+model Demand {
+  id              String        @id @default(uuid())
+  code            String        @unique
+  institutionId   String
+  institution     Institution    @relation(fields: [institutionId], references: [id])
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  bloodType       BloodType
+  rhFactor        RhFactor
+  quantity        Int           @default(1)
+  urgency         UrgencyLevel  @default(NORMAL)
+  reason          String?
+  status          DemandStatus  @default(ABERTA)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  transfers       Transfer[]
+
+  @@index([code])
+  @@index([institutionId])
+  @@index([bloodType, rhFactor])
+  @@index([status])
+  @@index([urgency])
+}
+
+// Urgency levels
+enum UrgencyLevel {
+  BAIXA
+  NORMAL
+  ALTA
+  EMERGENCIA
+}
+
+// Demand status
+enum DemandStatus {
+  ABERTA
+  EM_ANALISE
+  ATENDIDA
+  PARCIALMENTE_ATENDIDA
+  CANCELADA
+  EXPIRADA
+}
+
+// Transfer model - blood bag transfers between institutions
+model Transfer {
+  id                 String    @id @default(uuid())
+  code               String    @unique
+  demandId           String?
+  demand             Demand?   @relation(fields: [demandId], references: [id])
+  bagId              String
+  bag                BloodBag  @relation(fields: [bagId], references: [id])
+  fromInstitutionId  String
+  fromInstitution    Institution @relation("FromInstitution", fields: [fromInstitutionId], references: [id])
+  toInstitutionId    String
+  toInstitution      Institution @relation("ToInstitution", fields: [toInstitutionId], references: [id])
+  requestedById      String
+  requestedBy       User      @relation("RequestedBy", fields: [requestedById], references: [id])
+  approvedById       String?
+  approvedBy        User?     @relation("ApprovedBy", fields: [approvedById], references: [id])
+  quantity          Int       @default(1)
+  status            TransferStatus @default(PENDENTE)
+  requestedAt       DateTime  @default(now())
+  approvedAt        DateTime?
+  shippedAt         DateTime?
+  receivedAt        DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([code])
+  @@index([demandId])
+  @@index([bagId])
+  @@index([fromInstitutionId, toInstitutionId])
+  @@index([status])
+}
+
+// Transfer status
+enum TransferStatus {
+  PENDENTE
+  APROVADA
+  REJEITADA
+  EM_TRANSPORTE
+  ENTREGUE
+  CANCELADA
+}
+
+// Temperature Reading model
+model TemperatureReading {
+  id              String    @id @default(uuid())
+  bagId           String
+  bag             BloodBag  @relation(fields: [bagId], references: [id])
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id])
+  temperature     Float     // in Celsius
+  minTemperature  Float?    // Alert threshold
+  maxTemperature  Float?    // Alert threshold
+  isAlert        Boolean   @default(false)
+  notes           String?
+  timestamp       DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+
+  @@index([bagId])
+  @@index([timestamp])
+  @@index([isAlert])
+}
+
+// Audit Log model - system-wide audit trail
+model AuditLog {
+  id              String    @id @default(uuid())
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id])
+  action          String
+  entityType      String
+  entityId        String
+  oldValue        Json?
+  newValue        Json?
+  ipAddress       String?
+  userAgent       String?
+  timestamp       DateTime  @default(now())
+  success         Boolean   @default(true)
+  errorMessage    String?
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([timestamp])
+}

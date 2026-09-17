@@ -122,7 +122,7 @@ export class UserController {
       }
 
       // Hash password
-      import bcrypt from 'bcrypt';
+      const bcrypt = await import('bcrypt');
       const hashedPassword = await bcrypt.hash(password, 10);
 
       const user = await prisma.user.create({
@@ -178,7 +178,7 @@ export class UserController {
 
       // If updating password, hash it
       if (updateData.password) {
-        import bcrypt from 'bcrypt';
+        const bcrypt = require('bcrypt');
         updateData.password = await bcrypt.hash(updateData.password, 10);
       }
 

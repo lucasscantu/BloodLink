@@ -1,7 +1,7 @@
 import { Prisma, User } from '@prisma/client';
 import { prisma } from '../prisma';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 import { config } from '../config';
 import { UserRole } from '../types';
 import { CreateUserInput, UpdateUserInput, UserLoginInput, UserQueryParams } from '../schemas';

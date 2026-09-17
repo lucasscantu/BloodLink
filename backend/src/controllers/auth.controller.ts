@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';

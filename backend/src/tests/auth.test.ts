@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { UserService } from '../services/user.service';
 import { InstitutionService } from '../services/institution.service';
 import { prisma } from '../prisma';
-import jwt from 'jsonwebtoken';
+const jwt = require("jsonwebtoken");
 import { config } from '../config';
 import { UserRole } from '../types';
 
@@ -404,4 +404,4 @@ describe('Authentication', () => {
 });
 
 // Import bcrypt for password verification
-import bcrypt from 'bcrypt';
+const bcrypt = require("bcrypt");

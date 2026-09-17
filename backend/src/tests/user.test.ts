@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { UserService } from '../services/user.service';
 import { InstitutionService } from '../services/institution.service';
 import { prisma } from '../prisma';
-import bcrypt from 'bcrypt';
+const bcrypt = require("bcrypt");
 import { UserRole } from '../types';
 
 describe('UserService', () => {
