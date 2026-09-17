@@ -4,7 +4,7 @@
 # ============================================
 # Quick Start with Docker:
 #   docker compose down
-#   docker compose build --no-cache
+#   docker compose build
 #   docker compose up -d
 #
 # If Docker fails, use the alternative scripts:
@@ -61,7 +61,7 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
-    command: sh -c "npm install 2>&1 | grep -v 'audit\|fund\|deprecated' && npx prisma generate && npx prisma migrate dev --name init 2>/dev/null || true && npm run dev"
+    command: sh -c "npm install && npx prisma generate && npx prisma migrate dev --name init 2>/dev/null || true && npm run dev"
     restart: unless-stopped
     networks:
       - hospitalchain-network
@@ -77,7 +77,7 @@ services:
     volumes:
       - ./blockchain:/app
       - /app/node_modules
-    command: sh -c "npm install 2>&1 | grep -v 'audit\|fund\|deprecated' && npx hardhat node --host 0.0.0.0"
+    command: sh -c "npm install && npx hardhat node --host 0.0.0.0"
     restart: unless-stopped
     networks:
       - hospitalchain-network
@@ -99,7 +99,7 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    command: sh -c "npm install 2>&1 | grep -v 'audit\|fund\|deprecated' && npm run dev"
+    command: sh -c "npm install && npm run dev"
     restart: unless-stopped
     networks:
       - hospitalchain-network
