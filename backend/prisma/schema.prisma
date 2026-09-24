@@ -1,0 +1,263 @@
+// BloodLink - Schema do banco de dados
+// Projeto acadêmico de rastreabilidade de bolsas de sangue com blockchain
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" cobre quem roda o backend fora do Docker (Linux/Mac/Windows).
+  // As duas variantes "linux-musl*" cobrem node:20-alpine (Alpine usa musl
+  // libc): "linux-musl-openssl-3.0.x" para Alpine com OpenSSL 3.x (o mais
+  // comum hoje) e "linux-musl" como fallback para OpenSSL 1.1.x, cobrindo
+  // ambas sem precisar acertar a versão exata do Alpine usada na imagem.
+  binaryTargets = ["native", "linux-musl", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------- ENUMS -------------------------
+
+enum UserRole {
+  ADMIN
+  HEMOCENTRO
+  HOSPITAL
+  AUDITOR
+}
+
+enum InstitutionType {
+  HEMOCENTRO
+  HOSPITAL
+}
+
+enum BloodType {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+}
+
+enum BloodBagStatus {
+  COLETADA
+  EM_TESTE
+  APROVADA
+  REPROVADA
+  ARMAZENADA
+  EM_TRANSPORTE
+  RECEBIDA
+  DISPONIVEL
+  RESERVADA
+  UTILIZADA
+  DESCARTADA
+  EXPIRADA
+}
+
+enum DemandStatus {
+  ABERTA
+  EM_ANALISE
+  ATENDIDA
+  PARCIALMENTE_ATENDIDA
+  CANCELADA
+  EXPIRADA
+}
+
+enum DemandUrgency {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum TransferStatus {
+  OFERTADA
+  ACEITA
+  RESERVADA
+  EM_TRANSPORTE
+  RECEBIDA
+  RECUSADA
+  CANCELADA
+}
+
+enum EventType {
+  COLETA
+  TESTE_INICIADO
+  APROVACAO
+  REPROVACAO
+  ARMAZENAMENTO
+  TRANSFERENCIA_CRIADA
+  TRANSFERENCIA_ACEITA
+  RESERVA
+  TRANSPORTE_INICIADO
+  RECEBIMENTO
+  UTILIZACAO
+  DESCARTE
+  LEITURA_TEMPERATURA
+  ALERTA_TEMPERATURA
+}
+
+// ------------------------- MODELS -------------------------
+
+model Institution {
+  id        String          @id @default(uuid())
+  name      String
+  type      InstitutionType
+  city      String
+  state     String
+  latitude  Float
+  longitude Float
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  users         User[]
+  bloodBags     BloodBag[]        @relation("CurrentInstitution")
+  events        BloodBagEvent[]
+  demands       BloodDemand[]
+  offersMade    BloodTransfer[]   @relation("SourceInstitution")
+  offersReceived BloodTransfer[]  @relation("DestinationInstitution")
+
+  @@index([type])
+}
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  role          UserRole
+  institutionId String?
+  institution   Institution? @relation(fields: [institutionId], references: [id])
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  events    BloodBagEvent[]
+  auditLogs AuditLog[]
+
+  @@index([institutionId])
+}
+
+model BloodBag {
+  id                String         @id @default(uuid())
+  codigo            String         @unique
+  tipoSanguineo     BloodType
+  dataColeta        DateTime
+  dataValidade      DateTime
+  status            BloodBagStatus @default(COLETADA)
+  instituicaoAtualId String
+  instituicaoAtual  Institution    @relation("CurrentInstitution", fields: [instituicaoAtualId], references: [id])
+  localizacaoAtual  String
+  temperaturaAtual  Float?
+  qrCode            String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events              BloodBagEvent[]
+  temperatureReadings TemperatureReading[]
+  transfers           BloodTransfer[]
+
+  @@index([tipoSanguineo])
+  @@index([status])
+  @@index([instituicaoAtualId])
+}
+
+model BloodBagEvent {
+  id                      String      @id @default(uuid())
+  bagId                   String
+  bloodBag                BloodBag    @relation(fields: [bagId], references: [id])
+  tipoEvento              EventType
+  descricao               String
+  instituicaoId           String
+  instituicao             Institution @relation(fields: [instituicaoId], references: [id])
+  usuarioId               String?
+  usuario                 User?       @relation(fields: [usuarioId], references: [id])
+  timestamp               DateTime    @default(now())
+  hash                    String
+  // Índice real do evento no array on-chain (retornado por
+  // BlockchainService.registerEvent), usado para localizar o evento exato
+  // na blockchain ao verificar integridade — não é inferido por ordenação
+  // de timestamp, o que seria frágil em caso de dois eventos da mesma bolsa
+  // caindo no mesmo milissegundo (comum numa rede de teste local rápida).
+  eventIndex              Int
+  blockchainTransactionId String?
+  blockchainTx            BlockchainTransaction? @relation(fields: [blockchainTransactionId], references: [id])
+
+  @@index([bagId])
+  @@index([tipoEvento])
+}
+
+model BloodDemand {
+  id             String        @id @default(uuid())
+  hospitalId     String
+  hospital       Institution   @relation(fields: [hospitalId], references: [id])
+  tipoSanguineo  BloodType
+  quantidade     Int
+  quantidadeAtendida Int       @default(0)
+  urgencia       DemandUrgency
+  motivo         String
+  status         DemandStatus  @default(ABERTA)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  transfers BloodTransfer[]
+
+  @@index([tipoSanguineo])
+  @@index([status])
+}
+
+model BloodTransfer {
+  id                       String         @id @default(uuid())
+  demandId                 String?
+  demand                   BloodDemand?   @relation(fields: [demandId], references: [id])
+  bagId                    String
+  bloodBag                 BloodBag       @relation(fields: [bagId], references: [id])
+  sourceInstitutionId      String
+  sourceInstitution        Institution    @relation("SourceInstitution", fields: [sourceInstitutionId], references: [id])
+  destinationInstitutionId String
+  destinationInstitution   Institution    @relation("DestinationInstitution", fields: [destinationInstitutionId], references: [id])
+  status                   TransferStatus @default(OFERTADA)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  @@index([status])
+  @@index([bagId])
+}
+
+model TemperatureReading {
+  id        String   @id @default(uuid())
+  bagId     String
+  bloodBag  BloodBag @relation(fields: [bagId], references: [id])
+  valor     Float
+  alerta    Boolean  @default(false)
+  timestamp DateTime @default(now())
+
+  @@index([bagId])
+}
+
+model BlockchainTransaction {
+  id              String   @id @default(uuid())
+  txHash          String   @unique
+  blockNumber     Int?
+  contractMethod  String
+  payloadHash     String
+  network         String
+  status          String   @default("CONFIRMADA")
+  createdAt       DateTime @default(now())
+
+  events BloodBagEvent[]
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  usuarioId String?
+  usuario   User?    @relation(fields: [usuarioId], references: [id])
+  acao      String
+  detalhes  String
+  timestamp DateTime @default(now())
+
+  @@index([acao])
+}
