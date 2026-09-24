@@ -1,0 +1,100 @@
+version: "3.9"
+
+# BloodLink - ambiente completo via Docker
+#
+# `docker compose up --build` sobe TUDO: PostgreSQL, a rede blockchain local
+# (Hardhat, com o contrato implantado automaticamente), o backend (que espera
+# o contrato e o banco ficarem prontos, roda as migrations e semeia dados de
+# demonstração na primeira execução) e o frontend (servido via Nginx).
+#
+# Acesse depois de subir:
+#   Frontend: http://localhost:5173
+#   Backend:  http://localhost:3333/api/health
+#   Blockchain RPC: http://localhost:8545
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bloodlink-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bloodlink
+      POSTGRES_PASSWORD: bloodlink
+      POSTGRES_DB: bloodlink
+    ports:
+      # Formato "HOST:CONTAINER". Se a porta 5432 já estiver em uso na sua
+      # máquina, troque APENAS o lado esquerdo (ex.: "5435:5432") para
+      # acessar o banco de fora do Docker (psql, DBeaver etc.) por
+      # localhost:5435. NÃO mude o lado direito, e NÃO mude a porta na
+      # DATABASE_URL do serviço "backend" logo abaixo: a comunicação entre
+      # os containers usa o nome do serviço ("postgres") e a porta INTERNA
+      # (5432), que nunca muda — é completamente independente da porta
+      # exposta para o seu host.
+      - "5435:5432"
+    volumes:
+      - bloodlink_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bloodlink"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  blockchain:
+    build:
+      context: ./blockchain
+    container_name: bloodlink-blockchain
+    restart: unless-stopped
+    environment:
+      # Diretório compartilhado onde o deploy.ts grava deployed.json,
+      # para que o backend consiga lê-lo assim que estiver pronto.
+      DEPLOY_OUTPUT_DIR: /app/shared
+      BLOCKCHAIN_RPC_URL_PUBLIC: http://localhost:8545
+    volumes:
+      - blockchain_shared:/app/shared
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/app/shared/deployed.json"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+    container_name: bloodlink-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      blockchain:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://bloodlink:bloodlink@postgres:5432/bloodlink?schema=public
+      JWT_SECRET: troque-este-segredo-em-producao
+      PORT: 3333
+      BLOCKCHAIN_RPC_URL: http://blockchain:8545
+      BLOCKCHAIN_DEPLOYED_PATH: /app/shared/deployed.json
+      BLOCKCHAIN_PRIVATE_KEY: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      FRONTEND_URL: http://localhost:5173
+    volumes:
+      - blockchain_shared:/app/shared:ro
+    ports:
+      - "3333:3333"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:3333/api
+    container_name: bloodlink-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  bloodlink_pgdata:
+  blockchain_shared:
